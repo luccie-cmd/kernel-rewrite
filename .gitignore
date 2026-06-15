@@ -1,0 +1,13 @@
+.codex
+asan.asm
+*.txt
+*.log
+*.ll
+mountFile
+*.old
+__pycache__/
+Limine/
+bin/
+.vscode/
+.build-cache/
+fsModule/
