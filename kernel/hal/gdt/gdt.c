@@ -94,6 +94,8 @@ void gdtMapStacksToProc(uint64_t pid, PML4* pml4) {
         ((uint64_t)tssEntryLow->base_low);
     TSS* tempTss = (TSS*)(tssValue);
     if (pid != 0) {
+        debug("tss = 0x%lx rsp0 = 0x%lx ist1 = 0x%lx\n", (uint64_t)tempTss, tempTss->rsp0,
+              tempTss->ist1);
         if (getPhysicalAddr(pml4, (uint64_t)tempTss, false) == 0) {
             vmmMapPage(pml4, ((uint64_t)tempTss) - (uint64_t)getHHDM(), (uint64_t)tempTss,
                        MAP_PROTECTION_KERNEL | MAP_PROTECTION_RW | MAP_PROTECTION_NOEXEC,

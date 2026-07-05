@@ -55,7 +55,6 @@ switchProc:
     stac
     mfence
     mov cr3, rsi
-;     mfence
     jmp .flush
 .flush:
     mov r15, rdx

@@ -6,25 +6,25 @@
 
 #define error(fmt, ...)                                                                            \
     do {                                                                                           \
-        printf("ERROR:%s:%lu: " fmt, __FILE__, __LINE__, ##__VA_ARGS__);                           \
+        printf("ERROR:%s:%d: " fmt, __FILE__, __LINE__, ##__VA_ARGS__);                           \
         abort();                                                                                   \
     } while (0)
 #define warn(fmt, ...)                                                                             \
     do {                                                                                           \
-        printf("WARNING:%s:%lu: " fmt, __FILE__, __LINE__, ##__VA_ARGS__);                         \
+        printf("WARNING:%s:%d: " fmt, __FILE__, __LINE__, ##__VA_ARGS__);                         \
     } while (0)
 #define info(fmt, ...)                                                                             \
     do {                                                                                           \
-        printf("INFO:%s:%lu: " fmt, __FILE__, __LINE__, ##__VA_ARGS__);                            \
+        printf("INFO:%s:%d: " fmt, __FILE__, __LINE__, ##__VA_ARGS__);                            \
     } while (0)
 #ifdef DEBUG
 #define debug(fmt, ...)                                                                            \
     do {                                                                                           \
-        printf("DEBUG:%s:%lu: " fmt, __FILE__, __LINE__, ##__VA_ARGS__);                           \
+        printf("DEBUG:%s:%d: " fmt, __FILE__, __LINE__, ##__VA_ARGS__);                           \
     } while (0)
 #define todo(abrt, fmt, ...)                                                                       \
     do {                                                                                           \
-        printf("TODO:%s:%lu: " fmt, __FILE__, __LINE__, ##__VA_ARGS__);                            \
+        printf("TODO:%s:%d: " fmt, __FILE__, __LINE__, ##__VA_ARGS__);                            \
         if (abrt) {                                                                                \
             abort();                                                                               \
         }                                                                                          \

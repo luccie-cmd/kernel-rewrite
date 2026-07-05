@@ -42,6 +42,7 @@ uint64_t syscallExec(SyscallRegs* regs) {
     }
     ElfFile* file = loadElfObject(fd, 0, "/lib/");
     debug("entry point = 0x%lx\n", file->entryPoint);
+    debug("current base addr = 0x%lx new base addr = 0x%lx\n", proc->baseAddr, file->baseAddr);
     todo(true, "Replace current with `%s`\n", path);
 out:
     free((char*)path);

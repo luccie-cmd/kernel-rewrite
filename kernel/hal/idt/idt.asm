@@ -2,10 +2,9 @@ bits 64
 section .text
 global loadIDTASM
 loadIDTASM:
-    mov [rel IDT.limit], rsi
+    mov [rel IDT.limit], si
     mov [rel IDT.base], rdi
     lidt [rel IDT]
-    sti
     ret
 
 section .trampoline.data

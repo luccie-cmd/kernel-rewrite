@@ -76,7 +76,7 @@ typedef struct Process {
     ProcessState    state;
     uint8_t         waitStatus;
     uint8_t         exitCode;
-    bool            hasStarted;
+    _Atomic(bool)   hasStarted;
     PML4*           pml4;
     struct Process *next, *prev;
     dynarray(struct Process*) children;

@@ -51,9 +51,9 @@ initX64:
     mov cr4, rax
 
     ; Enable SMAP/SMEP
-    mov rax, cr4
-    or  rax, (1 << 20) | (1 << 21) | (1 << 22)
-    mov cr4, rax
+    ; mov rax, cr4
+    ; ; or  rax, (1 << 20) | (1 << 21) | (1 << 22)
+    ; mov cr4, rax
 
     ; Check SSE3 (bit 0), SSSE3 (bit 9), SSE4.1 (bit 19), SSE4.2 (bit 20)
     test ecx, 1 << 0

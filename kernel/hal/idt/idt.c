@@ -8,9 +8,9 @@
 extern void loadIDTASM(uint64_t base, uint16_t limit);
 
 typedef void (*exceptionHandler)(IsrRegisters*);
-static IDTEntry __attribute__((section(".trampoline.data"))) entries[256];
-static exceptionHandler                                      exceptionHandlers[32];
-static void                                                  PFhandler(IsrRegisters* regs);
+static IDTEntry __attribute__((section(".trampoline.data"), aligned(4096))) entries[256];
+static exceptionHandler                                                     exceptionHandlers[32];
+static void PFhandler(IsrRegisters* regs);
 
 void loadIDT() {
     __asm__("cli");
@@ -135,9 +135,9 @@ void handleInt(IsrRegisters* regs) {
         exceptionHandlers[regs->interrupt_number](regs);
         return;
     }
-    if (regs->interrupt_number == 19) {
-        return;
-    }
+    // if (regs->interrupt_number == 19) {
+    //     return;
+    // }
     LOCK(printRegsLock);
     printRegs(regs);
     UNLOCK(printRegsLock);
@@ -157,10 +157,10 @@ static void walkStack(void** rbp) {
     }
 }
 typedef struct __attribute__((packed)) PageFaultError {
-    uint8_t  PPV : 1;   // 1=PPV   0=NP         0
-    uint8_t  write : 1; // 1=Write 0=Read       1
-    uint8_t  user : 1;  // 1=CPL3  0=CPL0       0
-    uint8_t  rsvw : 1;  // Reserved field write 1
+    uint8_t  PPV : 1;   // 1=PPV   0=NP
+    uint8_t  write : 1; // 1=Write 0=Read
+    uint8_t  user : 1;  // 1=CPL3  0=CPL0
+    uint8_t  rsvw : 1;  // Reserved field write
     uint8_t  insF : 1;  // Instruction fetch
     uint8_t  PKV : 1;   // Protection key violation
     uint8_t  SS : 1;    // Shadow stack

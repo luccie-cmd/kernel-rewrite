@@ -4,6 +4,11 @@
 #include <kernel/hal/pci/pci.h>
 #include <kernel/mmu/mmu.h>
 
+static void forceReadVolatile(const void* var) {
+    volatile void* tmp = *(volatile void**)&var;
+    __asm__ volatile("" : "+m"(tmp));
+}
+
 #define CAP_MAXQUEUE_ENTRIES (cap & 0xFFFF)
 
 typedef struct __attribute__((packed)) NVMeCommand {
@@ -86,9 +91,10 @@ uint32_t readReg(NVMeMSCData* this, uint32_t offset) {
     if (getPhysicalAddr(vmmGetPML4(0), (uint64_t)reg, false) == 0) {
         vmmMapPage(vmmGetPML4(0), (size_t)reg, (size_t)reg,
                    MAP_PROTECTION_KERNEL | MAP_PROTECTION_NOEXEC | MAP_PROTECTION_RW,
-                   MAP_UC | MAP_PRESENT);
+                   MAP_UC | MAP_PRESENT | MAP_WT);
     }
     volatile uint32_t ret = *reg;
+    forceReadVolatile((void*)(uint64_t)ret);
     // debug("r base addr: 0x%llx offset: 0x%llx reg: 0x%llx ret: 0x%llx\n", this->baseAddr, offset,
     //       reg, ret);
     return ret;
@@ -98,9 +104,10 @@ uint64_t readReg64(NVMeMSCData* this, uint32_t offset) {
     if (getPhysicalAddr(vmmGetPML4(0), (uint64_t)reg, false) == 0) {
         vmmMapPage(vmmGetPML4(0), (size_t)reg, (size_t)reg,
                    MAP_PROTECTION_KERNEL | MAP_PROTECTION_NOEXEC | MAP_PROTECTION_RW,
-                   MAP_UC | MAP_PRESENT);
+                   MAP_UC | MAP_PRESENT | MAP_WT);
     }
     volatile uint64_t ret = *reg;
+    forceReadVolatile((void*)(uint64_t)ret);
     // debug("r64 base addr: 0x%llx offset: 0x%llx reg: 0x%llx ret: 0x%llx\n", this->baseAddr,
     // offset,
     //       reg, ret);
@@ -111,7 +118,7 @@ void writeReg(NVMeMSCData* this, uint32_t offset, uint32_t val) {
     if (getPhysicalAddr(vmmGetPML4(0), (uint64_t)reg, false) == 0) {
         vmmMapPage(vmmGetPML4(0), (size_t)reg, (size_t)reg,
                    MAP_PROTECTION_KERNEL | MAP_PROTECTION_NOEXEC | MAP_PROTECTION_RW,
-                   MAP_UC | MAP_PRESENT);
+                   MAP_UC | MAP_PRESENT | MAP_WT);
     }
     // debug("w base addr: 0x%llx offset: 0x%llx reg: 0x%llx value: 0x%llx\n", this->baseAddr,
     // offset,
@@ -123,42 +130,48 @@ void writeReg64(NVMeMSCData* this, uint32_t offset, uint64_t val) {
     if (getPhysicalAddr(vmmGetPML4(0), (uint64_t)reg, false) == 0) {
         vmmMapPage(vmmGetPML4(0), (size_t)reg, (size_t)reg,
                    MAP_PROTECTION_KERNEL | MAP_PROTECTION_NOEXEC | MAP_PROTECTION_RW,
-                   MAP_UC | MAP_PRESENT);
+                   MAP_UC | MAP_PRESENT | MAP_WT);
     }
     // debug("w64 base addr: 0x%llx offset: 0x%llx reg: 0x%llx value: 0x%llx\n", this->baseAddr,
     //       offset, reg, val);
     *reg = val;
 }
 
-static bool sendCmd(NVMeMSCData* this, NVMeQueue* sq, NVMeQueue* cq, NVMeCommand* cmd) {
-    uint8_t* entry = (uint8_t*)sq->addr + (sq->tail * sizeof(NVMeCommand));
+static bool sendCmd(NVMeMSCData* this, volatile NVMeQueue* sq, volatile NVMeQueue* cq,
+                    volatile NVMeCommand* cmd) {
+    volatile uint8_t*        entry = (uint8_t*)sq->addr + (sq->tail * sizeof(NVMeCommand));
+    volatile NVMeCompletion* cqe =
+        (volatile NVMeCompletion*)(cq->addr + cq->head * sizeof(NVMeCompletion));
     debug("SQ addr 0x%lx\n", sq->addr);
     debug("Sending command 0x%lx CQE->cmd_id = %x sq_id = %x\n", cmd->opcode, cmd->command_id,
           sq->qid);
-    memcpy((void*)entry, cmd, sizeof(NVMeCommand));
+    memcpy((void*)entry, (void*)cmd, sizeof(NVMeCommand));
+    __asm__ volatile("sfence" ::: "memory");
     // _movdir64b(entry, cmd);
     sq->tail = (sq->tail + 1) % sq->size;
     writeReg(this, 0x1000 + 8 * sq->qid, sq->tail);
+    __asm__ volatile("mfence" ::: "memory");
     uint8_t  attempts = 255;
     uint16_t status   = 0;
     while (attempts) {
-        volatile NVMeCompletion* cqe =
-            (volatile NVMeCompletion*)(cq->addr + cq->head * sizeof(NVMeCompletion));
         uint32_t timeout = 500000;
-        if (cqe->phase != cq->phase) {
-            error("Current phase is invalid\n");
-        }
-        while (timeout) {
-            __asm__("nop");
+        while (cqe->phase != cq->phase && timeout) {
+            __asm__("nop" ::: "memory");
             timeout--;
+            // error("Current phase is invalid\n");
         }
+        // while (timeout) {
+        //     __asm__("nop");
+        //     timeout--;
+        // }
         status = cqe->status;
-        // debug("CQE->status = %015.15b CQE->cmd_id = %x CQE->sq_id = %x condition = %s\n",
-        //       cqe->status, cqe->cmd_id, cqe->sq_id,
+        // debug("CQE->status = %015.15b CQ->PHASE = %01.1b CQE->PHASE = %01.1b CQE->cmd_id = %x "
+        //       "CQE->sq_id = %x condition = %s\n",
+        //       cqe->status, cq->phase, cqe->phase, cqe->cmd_id, cqe->sq_id,
         //       (cqe->status == 0 && cqe->cmd_id == cmd->command_id && cqe->sq_id == sq->qid)
         //           ? "true"
         //           : "false");
-        if (cqe->cmd_id == cmd->command_id && cqe->sq_id == sq->qid) {
+        if (cqe->phase == cq->phase && cqe->cmd_id == cmd->command_id && cqe->sq_id == sq->qid) {
             break;
         }
         attempts--;
@@ -169,11 +182,13 @@ static bool sendCmd(NVMeMSCData* this, NVMeQueue* sq, NVMeQueue* cq, NVMeCommand
     if (status != 0) {
         error("Status was non zero: %032.32b\n", status);
     }
+    cq->head++;
     if (cq->head == cq->size) {
+        cq->head = 0;
         cq->phase ^= 1;
     }
-    cq->head = (cq->head + 1) % cq->size;
     writeReg(this, 0x1000 + 8 * cq->qid + 4, cq->head);
+    __asm__ volatile("sfence" ::: "memory");
     return status == 0;
 }
 
@@ -189,7 +204,7 @@ static bool NvmeRead(MSCDriver* mscDriver, void* buffer, size_t offset, size_t l
         vmmMapPage(vmmGetPML4(0), (size_t)((size_t)pageAlignBuffer + i),
                    (size_t)((size_t)pageAlignBuffer + i),
                    MAP_PROTECTION_KERNEL | MAP_PROTECTION_NOEXEC | MAP_PROTECTION_RW,
-                   MAP_UC | MAP_PRESENT);
+                   MAP_UC | MAP_PRESENT | MAP_WT);
     }
     memset(cmd, 0, sizeof(NVMeCommand));
     memset((void*)pageAlignBuffer, 0, length * 512);
@@ -226,7 +241,7 @@ static bool NvmeWrite(MSCDriver* mscDriver, const void* buffer, size_t offset, s
         vmmMapPage(vmmGetPML4(0), (size_t)((size_t)pageAlignBuffer + i),
                    (size_t)((size_t)pageAlignBuffer + i),
                    MAP_PROTECTION_KERNEL | MAP_PROTECTION_NOEXEC | MAP_PROTECTION_RW,
-                   MAP_UC | MAP_PRESENT);
+                   MAP_UC | MAP_PRESENT | MAP_WT);
     }
     memcpy((void*)pageAlignBuffer, (void*)buffer, length * 512);
     for (size_t i = 0; i < length * 512; i += PAGE_SIZE) {
@@ -263,12 +278,12 @@ static void createAdmQueue(NVMeMSCData* this, uint64_t cap) {
     for (size_t i = 0; i < completionQueueSize; i += PAGE_SIZE) {
         vmmMapPage(vmmGetPML4(0), this->admCq->addr + i, this->admCq->addr + i,
                    MAP_PROTECTION_KERNEL | MAP_PROTECTION_NOEXEC | MAP_PROTECTION_RW,
-                   MAP_UC | MAP_PRESENT);
+                   MAP_UC | MAP_PRESENT | MAP_WT);
     }
     for (size_t i = 0; i < submissionQueueSize; i += PAGE_SIZE) {
         vmmMapPage(vmmGetPML4(0), this->admSq->addr + i, this->admSq->addr + i,
                    MAP_PROTECTION_KERNEL | MAP_PROTECTION_NOEXEC | MAP_PROTECTION_RW,
-                   MAP_UC | MAP_PRESENT);
+                   MAP_UC | MAP_PRESENT | MAP_WT);
     }
     memset((void*)this->admSq->addr, 0, submissionQueueSize);
     memset((void*)this->admCq->addr, 0, completionQueueSize);
@@ -276,8 +291,8 @@ static void createAdmQueue(NVMeMSCData* this, uint64_t cap) {
     this->admSq->qid   = 0;
     this->admCq->head  = 0;
     this->admSq->tail  = 0;
-    this->admCq->phase = 0;
-    this->admSq->phase = 0;
+    this->admCq->phase = 1;
+    this->admSq->phase = 1;
     writeReg64(this, 0x28, this->admSq->addr);
     writeReg64(this, 0x30, this->admCq->addr);
 }
@@ -294,6 +309,7 @@ static void registerIoQueues(NVMeMSCData* this) {
     createIOQueue->opcode     = 5;
     createIOQueue->command_id = cmdId++;
     sendCmd(this, this->admSq, this->admCq, createIOQueue);
+    this->ioCq->phase = 1;
     memset(createIOQueue, 0, sizeof(NVMeCommand));
     createIOQueue->prp1       = this->ioSq->addr;
     createIOQueue->cwd10      = ((uint32_t)this->ioSq->qid) | ((uint32_t)this->ioSq->size << 16);
@@ -301,6 +317,7 @@ static void registerIoQueues(NVMeMSCData* this) {
     createIOQueue->opcode     = 1;
     createIOQueue->command_id = cmdId++;
     sendCmd(this, this->admSq, this->admCq, createIOQueue);
+    this->ioSq->phase = 1;
     free(createIOQueue);
 }
 
@@ -314,12 +331,12 @@ static void createIoQueues(NVMeMSCData* this, uint64_t cap) {
     for (size_t i = 0; i < completionQueueSize; i += PAGE_SIZE) {
         vmmMapPage(vmmGetPML4(0), this->ioCq->addr + i, this->ioCq->addr + i,
                    MAP_PROTECTION_KERNEL | MAP_PROTECTION_NOEXEC | MAP_PROTECTION_RW,
-                   MAP_UC | MAP_PRESENT);
+                   MAP_UC | MAP_PRESENT | MAP_WT);
     }
     for (size_t i = 0; i < submissionQueueSize; i += PAGE_SIZE) {
         vmmMapPage(vmmGetPML4(0), this->ioSq->addr + i, this->ioSq->addr + i,
                    MAP_PROTECTION_KERNEL | MAP_PROTECTION_NOEXEC | MAP_PROTECTION_RW,
-                   MAP_UC | MAP_PRESENT);
+                   MAP_UC | MAP_PRESENT | MAP_WT);
     }
     memset((void*)this->ioSq->addr, 0, submissionQueueSize);
     memset((void*)this->ioCq->addr, 0, completionQueueSize);
@@ -387,7 +404,7 @@ static void NvmeInit(MSCDriver* mscDriver, PCIDevice* pciDev) {
     this->baseAddr = (void*)(((uint64_t)BAR1 << 32) | (BAR0 & 0xFFFFFFF0));
     vmmMapPage(vmmGetPML4(0), (uint64_t)this->baseAddr, (uint64_t)this->baseAddr,
                MAP_PROTECTION_KERNEL | MAP_PROTECTION_NOEXEC | MAP_PROTECTION_RW,
-               MAP_GLOBAL | MAP_PRESENT | MAP_UC);
+               MAP_GLOBAL | MAP_PRESENT | MAP_UC | MAP_WT);
     uint64_t cap = readReg64(this, 0x00);
     // std::memcpy(&this->capabilities, &cap, sizeof(cap));
     // if (intpow(2, 12 + this->capabilities.MinPagesize) != PAGE_SIZE) {

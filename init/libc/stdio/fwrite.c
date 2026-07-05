@@ -33,6 +33,12 @@ size_t fwrite(const void* __ptr, size_t __size, size_t __n, FILE* __s) {
         syscall_execute(SYS_WRITE, __s->handle, __s->buffer, __s->bufferIdx);
         __s->bufferIdx = 0;
         memset(__s->buffer, 0, sizeof(__s->buffer));
+    } else if (__s->bufferMode == FILE_BUFFER_MODE_FULL) {
+        if (__s->bufferIdx >= sizeof(__s->buffer)) {
+            syscall_execute(SYS_WRITE, __s->handle, __s->buffer, __s->bufferIdx);
+            __s->bufferIdx = 0;
+            memset(__s->buffer, 0, sizeof(__s->buffer));
+        }
     }
     return __n;
 }

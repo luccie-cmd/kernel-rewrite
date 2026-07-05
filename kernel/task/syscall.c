@@ -233,7 +233,8 @@ static void printRegs(IsrRegisters* regs) {
 }
 
 void syscallHandler(SyscallRegs* sysRegs) {
-    Thread* currentThread              = getCurrentThread();
+    Thread* currentThread = getCurrentThread();
+    LOCK(currentThread->owner->lock);
     currentThread->status              = THREADSTATUS_BLOCKED;
     currentThread->registers->cs       = 0x23;
     currentThread->registers->ss       = 0x1B;
@@ -253,6 +254,7 @@ void syscallHandler(SyscallRegs* sysRegs) {
     currentThread->registers->rip      = sysRegs->rcx;
     currentThread->registers->rflags   = sysRegs->r11;
     currentThread->registers->rax      = sysRegs->num;
+    UNLOCK(currentThread->owner->lock);
     LOCK(printRegsLock);
     printf("SYSCALL:\n");
     printRegs(currentThread->registers);

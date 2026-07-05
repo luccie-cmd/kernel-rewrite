@@ -65,7 +65,6 @@ ALLOWED_CONFIG = [
     ["analyzer", ["yes", "no"], True],
     ["imageSize", [], False],
     ["usan", ["yes", "no"], True],
-    ["asan", ["yes", "no"], True],
 ]
 if not checkConfig(CONFIG, ALLOWED_CONFIG):
     print("Invalid config file.")
@@ -112,11 +111,6 @@ if "yes" in CONFIG.get("usan"):
     CONFIG["CFLAGS"] += ['-fsanitize=undefined']
     if "clang" not in CONFIG.get("compiler"):
         CONFIG["LDFLAGS"] += ['-fsanitize=undefined']
-
-if "yes" in CONFIG.get("asan"):
-    CONFIG["CFLAGS"] += ['-fsanitize=kernel-address']
-    if "clang" not in CONFIG.get("compiler"):
-        CONFIG["LDFLAGS"] += ['-fsanitize=kernel-address']
 
 if "gcc" in CONFIG.get("compiler"):
     if "yes" in CONFIG.get("analyzer"):
@@ -563,13 +557,7 @@ def main():
     if "compile" in sys.argv:
         callCmd(f"rm -rf {CONFIG["outDir"][0]}/init/libc/init/start.S.o")
         print("> Building Libc")
-        if CONFIG["asan"][0] == "yes":
-            CONFIG["CFLAGS"].remove("-fsanitize=kernel-address")
-            CONFIG["CFLAGS"].append("-fsanitize=address")
         buildDir("libc", True, f"{CONFIG['outDir'][0]}/libc.a")
-        if CONFIG["asan"][0] == "yes":
-            CONFIG["CFLAGS"].remove("-fsanitize=address")
-            CONFIG["CFLAGS"].append("-fsanitize=kernel-address")
         print("> Building drivers")
         buildDir("drivers", True, f"{CONFIG['outDir'][0]}/drivers.a")
         print("> Building common")
@@ -591,9 +579,6 @@ def main():
         CONFIG["CFLAGS"].remove('-mno-tls-direct-seg-refs')
         CONFIG["CFLAGS"].remove('-mno-red-zone')
         CONFIG["CFLAGS"].remove('-fno-stack-protector')
-        if CONFIG["asan"][0] == "yes":
-            CONFIG["CFLAGS"].remove("-fsanitize=kernel-address")
-            # CONFIG["CFLAGS"].append("-fsanitize=address")
         CONFIG["CXXFLAGS"].remove('-fno-exceptions')
         CONFIG["CXXFLAGS"].remove('-fno-rtti') 
         buildDir("init/src", False)
@@ -618,17 +603,11 @@ def main():
         CONFIG["LDFLAGS"].remove('-fno-PIC')
         CONFIG["LDFLAGS"].remove('-mcmodel=kernel')
         CONFIG["LDFLAGS"].remove('-Wl,-no-pie')
-        CONFIG["LDFLAGS"].append(f'{CONFIG['outDir'][0]}/libc_init.a')
         CONFIG["LDFLAGS"].append(f'-static')
-        if CONFIG["asan"][0] == "yes":
-            CONFIG["LDFLAGS"].remove("-fsanitize=kernel-address")
-            # CONFIG["LDFLAGS"].append("-fsanitize=address")
         CONFIG["LDFLAGS"].append(f"{CONFIG["outDir"][0]}/init/libc/init/start.S.o")
-        # linkDir(f"{CONFIG['outDir'][0]}/init/src", None, "init", [f"{CONFIG['outDir'][0]}/libc_init.a"])
-        linkDir(f"{CONFIG['outDir'][0]}/init/src", None, "init")
+        linkDir(f"{CONFIG['outDir'][0]}/init/src", None, "init", [f"{CONFIG['outDir'][0]}/libc_init.a"])
         print("> Linking shell")
         CONFIG["LDFLAGS"].remove(f'-static')
-        CONFIG["LDFLAGS"].remove(f'{CONFIG['outDir'][0]}/libc_init.a')
         CONFIG["LDFLAGS"].append('-Lbin')
         CONFIG["LDFLAGS"].append('-l:libc_init.so')
         linkDir(f"{CONFIG['outDir'][0]}/init/shell", None, "shell")
