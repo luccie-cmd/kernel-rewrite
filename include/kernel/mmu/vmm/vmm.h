@@ -89,6 +89,7 @@ void* makeVirtualAddr(void* addr);
 void  vmmUnmapPage(PML4* pml4, size_t virtualAddr);
 void  vmmMapPage(PML4* pml4, size_t physicalAddr, size_t virtualAddr, int protFlags, int mapFlags);
 PML4* vmmGetPML4(uint64_t pid);
+void  vmmClearPML4(PML4* pml4);
 uint64_t getPhysicalAddr(PML4* pml4, uint64_t addr, bool ignorePresent);
 void     vmmInitialize();
 bool     vmmIsInitialized();

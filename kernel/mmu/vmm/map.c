@@ -37,22 +37,23 @@ PML4* vmmGetPML4(uint64_t pid) {
 }
 
 typedef struct __attribute__((packed)) vmm_address {
-    uint64_t padding : 16;
-    uint64_t pml4e : 9;
-    uint64_t pdpe : 9;
-    uint64_t pde : 9;
-    uint64_t pte : 9;
     uint64_t offset : 12;
+    uint64_t pte : 9;
+    uint64_t pde : 9;
+    uint64_t pdpe : 9;
+    uint64_t pml4e : 9;
+    uint64_t padding : 16;
 } vmm_address;
 
 static vmm_address getVMMfromVA(uint64_t vaddr) {
     vmm_address result;
-    result.padding = (vaddr >> 48) & 0xFFFF;
-    result.pml4e   = (vaddr >> 39) & 0x1FF;
-    result.pdpe    = (vaddr >> 30) & 0x1FF;
-    result.pde     = (vaddr >> 21) & 0x1FF;
-    result.pte     = (vaddr >> 12) & 0x1FF;
-    result.offset  = vaddr & 0xFFF;
+    memcpy(&result, &vaddr, sizeof(result));
+    // result.padding = (vaddr >> 48) & 0xFFFF;
+    // result.pml4e   = (vaddr >> 39) & 0x1FF;
+    // result.pdpe    = (vaddr >> 30) & 0x1FF;
+    // result.pde     = (vaddr >> 21) & 0x1FF;
+    // result.pte     = (vaddr >> 12) & 0x1FF;
+    // result.offset  = vaddr & 0xFFF;
     return result;
 }
 
@@ -114,23 +115,23 @@ void vmmMapPage(PML4* pml4, size_t physicalAddr, size_t virtualAddr, int protFla
         uint64_t page = (uint64_t)pmmAllocate();
         memset(makeVirtualAddr((void*)page), 0, PAGE_SIZE);
         pml4[vma.pml4e].pdpe_ptr = page >> 12;
-        pml4[vma.pml4e].present  = 1;
     }
+    pml4[vma.pml4e].present = 1;
     PDPE* pdpe = (PDPE*)(makeVirtualAddr((void*)(uint64_t)(pml4[vma.pml4e].pdpe_ptr << 12)));
     if (pdpe[vma.pdpe].pde_ptr == 0) {
         uint64_t page = (uint64_t)pmmAllocate();
         memset(makeVirtualAddr((void*)page), 0, PAGE_SIZE);
         pdpe[vma.pdpe].pde_ptr = page >> 12;
-        pdpe[vma.pdpe].present = 1;
     }
+    pdpe[vma.pdpe].present = 1;
     PDE* pde = (PDE*)(makeVirtualAddr((void*)(uint64_t)(pdpe[vma.pdpe].pde_ptr << 12)));
     if (pde[vma.pde].pte_ptr == 0) {
         uint64_t page = (uint64_t)pmmAllocate();
         memset(makeVirtualAddr((void*)page), 0, PAGE_SIZE);
         pde[vma.pde].pte_ptr = page >> 12;
-        pde[vma.pde].present = 1;
     }
-    PTE* pte = (PTE*)(makeVirtualAddr((void*)(uint64_t)(pde[vma.pde].pte_ptr << 12)));
+    pde[vma.pde].present = 1;
+    PTE* pte             = (PTE*)(makeVirtualAddr((void*)(uint64_t)(pde[vma.pde].pte_ptr << 12)));
 
     pml4[vma.pml4e].rw         = 1;
     pml4[vma.pml4e].user       = 1;
@@ -213,4 +214,56 @@ uint64_t getPhysicalAddr(PML4* pml4, uint64_t addr, bool ignorePresent) {
     uint64_t retAddr = pte[vma.pte].papn_ppn << 12;
     UNLOCK(lock);
     return retAddr;
+}
+
+static void clearPTEEntry(PML4* pml4, uint64_t pml4e, uint64_t pdpe, uint64_t pde, uint64_t pte) {
+    vmm_address vma = {
+        .padding = pml4e >= 256 ? 0xFFFF : 0,
+        .pml4e   = pml4e,
+        .pdpe    = pdpe,
+        .pde     = pde,
+        .pte     = pte,
+        .offset  = 0,
+    };
+    uint64_t addr = 0;
+    memcpy(&addr, &vma, sizeof(addr));
+    vmmUnmapPage(pml4, addr);
+}
+
+static void clearPTE(PML4* pml4, uint64_t pml4e, uint64_t pdpee, uint64_t pdee) {
+    PDPE* pdpe = (PDPE*)((uint64_t)makeVirtualAddr((void*)(uint64_t)(pml4[pml4e].pdpe_ptr << 12)));
+    PDE*  pde  = (PDE*)((uint64_t)makeVirtualAddr((void*)(uint64_t)(pdpe[pdpee].pde_ptr << 12)));
+    PTE*  pte  = (PTE*)((uint64_t)makeVirtualAddr((void*)(uint64_t)(pde[pdee].pte_ptr << 12)));
+    for (uint64_t ptee = 0; ptee < 512; ++ptee) {
+        if (pte[ptee].present != 0 && pte[ptee].papn_ppn != 0) {
+            clearPTEEntry(pml4, pml4e, pdpee, pdee, ptee);
+        }
+    }
+}
+
+static void clearPDE(PML4* pml4, uint64_t pml4e, uint64_t pdpee) {
+    PDPE* pdpe = (PDPE*)((uint64_t)makeVirtualAddr((void*)(uint64_t)(pml4[pml4e].pdpe_ptr << 12)));
+    PDE*  pde  = (PDE*)((uint64_t)makeVirtualAddr((void*)(uint64_t)(pdpe[pdpee].pde_ptr << 12)));
+    for (uint64_t pdee = 0; pdee < 512; ++pdee) {
+        if (pde[pdee].present != 0) {
+            clearPTE(pml4, pml4e, pdpee, pdee);
+        }
+    }
+}
+
+static void clearPDPE(PML4* pml4, uint64_t pml4e) {
+    PDPE* pdpe = (PDPE*)((uint64_t)makeVirtualAddr((void*)(uint64_t)(pml4[pml4e].pdpe_ptr << 12)));
+    for (uint64_t pdpee = 0; pdpee < 512; ++pdpee) {
+        if (pdpe[pdpee].present != 0) {
+            clearPDE(pml4, pml4e, pdpee);
+        }
+    }
+}
+
+void vmmClearPML4(PML4* pml4) {
+    for (uint64_t pml4e = 0; pml4e < 512; ++pml4e) {
+        if (pml4[pml4e].present != 0) {
+            clearPDPE(pml4, pml4e);
+        }
+    }
 }

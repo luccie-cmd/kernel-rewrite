@@ -12,7 +12,7 @@ static Spinlock gsBasesSpinlock;
 static bool     initialized;
 static Process* globalParent;
 static dynarray(GSbase*) gsBases;
-const size_t stackSize = USER_STACK_PAGES * PAGE_SIZE;
+static const size_t stackSize = USER_STACK_PAGES * PAGE_SIZE;
 
 void taskInitialize() {
     LOCK(spinlock);
@@ -51,10 +51,10 @@ static TaskMapping* findMappingInProcess(Process* proc, uint64_t virtualAddress)
     return NULL;
 }
 
-static void addAddrsToProc(Process* proc, ElfFile* obj) {
+void taskAddAddrsToProc(Process* proc, ElfFile* obj) {
     for (size_t j = 0; j < dyn_size(obj->deps); ++j) {
         ElfFile* loadObj = obj->deps[j];
-        addAddrsToProc(proc, loadObj);
+        taskAddAddrsToProc(proc, loadObj);
     }
     for (size_t k = 0; k < dyn_size(obj->mappings); ++k) {
         TaskMapping* memMapping = obj->mappings[k];
@@ -205,7 +205,7 @@ void makeNewProcess(uint64_t pid, ElfFile* obj) {
     debug("0x%lx 0x%lx\n", obj->startAddr, obj->baseAddr);
     proc->baseAddr = obj->baseAddr;
     proc->threads  = NULL;
-    addAddrsToProc(proc, obj);
+    taskAddAddrsToProc(proc, obj);
     proc->elfObj = obj;
     if (globalParent == NULL) {
         globalParent = proc;

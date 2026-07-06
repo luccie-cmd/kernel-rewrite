@@ -105,6 +105,7 @@ bool     taskIsInitialized();
 uint64_t getNewPID();
 void     makeNewProcess(uint64_t pid, ElfFile* obj);
 void     attachThread(uint64_t pid, uint64_t entryPoint);
+void taskAddAddrsToProc(Process* proc, ElfFile* obj);
 void     mapProcessAddr(Process* proc, uint64_t virtualAddress, bool shouldReturn);
 void     nextProc();
 void     cleanProc(uint64_t pid, uint8_t exitCode);
