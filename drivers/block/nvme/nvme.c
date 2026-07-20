@@ -1,6 +1,6 @@
+#include <common/dbg/dbg.h>
 #include <common/spinlock.h>
 #include <drivers/block/nvme.h>
-#include <immintrin.h>
 #include <kernel/hal/pci/pci.h>
 #include <kernel/mmu/mmu.h>
 
@@ -413,10 +413,9 @@ static bool sendCmd(NVMeMSCData* this, volatile NVMeQueue* sq, volatile NVMeQueu
           sq->qid);
     memcpy((void*)entry, (void*)cmd, sizeof(NVMeCommand));
     __asm__ volatile("mfence" ::: "memory");
-    // _movdir64b(entry, cmd);
     sq->tail = (sq->tail + 1) % sq->size;
-    __asm__ volatile("mfence" ::: "memory");
     writeReg(this, 0x1000 + 8 * sq->qid, sq->tail);
+    __asm__ volatile("mfence" ::: "memory");
     uint8_t  attempts = 255;
     uint16_t status   = 0;
     while (attempts) {

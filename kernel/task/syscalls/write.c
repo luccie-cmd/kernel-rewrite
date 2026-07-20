@@ -1,3 +1,4 @@
+#include <common/dbg/dbg.h>
 #include <kernel/task/syscall.h>
 #include <kernel/task/task.h>
 
@@ -11,6 +12,10 @@ uint64_t syscallWrite(SyscallRegs* regs) {
     }
     size_t   fd         = regs->arg0;
     uint64_t userBuffer = regs->arg1;
+    if (!proc->FDs[fd]) {
+        debug("FD %lu is not valid\n", fd);
+        return (uint64_t)-1;
+    }
     debug("Write base 0x%lx to fd %lu\n", userBuffer, fd);
     const uint8_t* data = copyFromUser(proc, userBuffer, length);
     proc->FDs[fd]->write(proc->FDs[fd], data, length);

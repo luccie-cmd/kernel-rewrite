@@ -1,3 +1,4 @@
+#include <common/dbg/dbg.h>
 #include <kernel/task/syscall.h>
 #include <kernel/vfs/vfs.h>
 
@@ -6,17 +7,29 @@ static void clearELFObj(ElfFile* obj) {
         free(obj->mappings[i]);
     }
     dyn_free(obj->mappings);
-    if (obj->strtab) {
-        free(obj->strtab);
-    }
-    for (uint64_t i = 0; i < dyn_size(obj->relaEntries); ++i) {
-        free(obj->relaEntries[i]);
-    }
-    dyn_free(obj->relaEntries);
-    for (uint64_t i = 0; i < dyn_size(obj->deps); ++i) {
-        clearELFObj(obj->deps[i]);
-    }
+    // if (obj->strtab) {
+    //     free(obj->strtab);
+    // }
+    // for (uint64_t i = 0; i < dyn_size(obj->relaEntries); ++i) {
+    //     free(obj->relaEntries[i]);
+    // }
+    // dyn_free(obj->relaEntries);
+    // for (uint64_t i = 0; i < dyn_size(obj->deps); ++i) {
+    //     clearELFObj(obj->deps[i]);
+    // }
     free(obj);
+}
+
+static inline void addInitialPointers(Thread* thread, dynarray(char*) argv, dynarray(char*) envp,
+                                      dynarray(Elf64_auxv_t) auxv) {
+    (void)thread;
+    (void)auxv;
+    for (uint64_t i = 0; i < dyn_size(argv); ++i) {
+        todo(true, "Push `%s`", argv[i]);
+    }
+    if (envp) {
+        todo(true, "Add support for environment variables\n");
+    }
 }
 
 static const size_t stackSize = USER_STACK_PAGES * PAGE_SIZE;
@@ -61,13 +74,18 @@ uint64_t syscallExec(SyscallRegs* regs) {
         goto out;
     }
     ElfFile* file = loadElfObject(fd, 0, "/lib/");
+    if (!file) {
+        warn("File `%s` is not a valid ELF file\n", path);
+        returnCode = 3;
+        goto out;
+    }
     debug("entry point = 0x%lx\n", file->entryPoint);
     debug("current base addr = 0x%lx new base addr = 0x%lx\n", proc->baseAddr, file->baseAddr);
     vmmClearPML4(proc->pml4);
     proc->hasStarted = false;
-    if (!file->relaVirtual) {
-        debug("No RELA address was passed in\n");
-    }
+    // if (!file->relaVirtual) {
+    //     debug("No RELA address was passed in\n");
+    // }
     proc->baseAddr      = file->baseAddr;
     proc->threads       = NULL;
     proc->memoryMapping = NULL;
@@ -89,6 +107,19 @@ uint64_t syscallExec(SyscallRegs* regs) {
     UNLOCK(proc->lock);
     attachThread(proc->pid, file->entryPoint);
     LOCK(proc->lock);
+    if (thread->next == thread) {
+        dynarray(Elf64_auxv_t) auxv = NULL;
+        uint64_t base               = 0;
+        if (file->interpreter) {
+            base = file->interpreter->baseAddr;
+        }
+        dyn_push(auxv, ((Elf64_auxv_t){.a_type = AT_BASE, .a_un.a_val = base}));
+        dyn_push(auxv, ((Elf64_auxv_t){.a_type = AT_PHDR, .a_un.a_val = file->baseAddr}));
+        // AT_PHENT
+        // AT_PHNUM
+        // AT_ENTRY
+        addInitialPointers(thread, (char**)argv, NULL, auxv);
+    }
 out:
     free((char*)path);
     for (size_t j = 0; j < dyn_size(argv) - 1; ++j) {

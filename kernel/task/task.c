@@ -1,3 +1,4 @@
+#include <common/dbg/dbg.h>
 #include <common/minmax.h>
 #include <common/spinlock.h>
 #include <kernel/hal/gdt/gdt.h>
@@ -52,10 +53,10 @@ static TaskMapping* findMappingInProcess(Process* proc, uint64_t virtualAddress)
 }
 
 void taskAddAddrsToProc(Process* proc, ElfFile* obj) {
-    for (size_t j = 0; j < dyn_size(obj->deps); ++j) {
-        ElfFile* loadObj = obj->deps[j];
-        taskAddAddrsToProc(proc, loadObj);
-    }
+    // for (size_t j = 0; j < dyn_size(obj->deps); ++j) {
+    //     ElfFile* loadObj = obj->deps[j];
+    //     taskAddAddrsToProc(proc, loadObj);
+    // }
     for (size_t k = 0; k < dyn_size(obj->mappings); ++k) {
         TaskMapping* memMapping = obj->mappings[k];
         size_t       offset     = memMapping->virtualStart % PAGE_SIZE;
@@ -83,37 +84,34 @@ void taskAddAddrsToProc(Process* proc, ElfFile* obj) {
         memMapping->next    = proc->memoryMapping;
         proc->memoryMapping = memMapping;
     }
-    if (obj->relaVirtual) {
-        TaskMapping* mapping = findMappingInProcess(proc, obj->relaVirtual);
-        if (mapping == NULL) {
-            error("Failed to find process memory mapping for rela virtual 0x%lx\n",
-                  obj->relaVirtual);
-        }
-        for (size_t i = 0; i < obj->relaSize; i += sizeof(Elf64_Rela)) {
-            Elf64_Rela* rela = malloc(sizeof(Elf64_Rela));
-            vfsSeek(mapping->handle, (obj->relaVirtual - obj->baseAddr) + mapping->fileOffset + i);
-            vfsRead(mapping->handle, rela, sizeof(Elf64_Rela));
-            rela->r_offset += obj->baseAddr;
-            if (rela->r_info == 0) break;
-            dyn_push(obj->relaEntries, rela);
-            dyn_push(proc->relas, rela);
-        }
-    }
-    if (obj->jmpVirtual) {
-        TaskMapping* mapping = findMappingInProcess(proc, obj->jmpVirtual);
-        if (mapping == NULL) {
-            error("Failed to find process memory mapping for jmp virtual 0x%lx\n", obj->jmpVirtual);
-        }
-        for (size_t i = 0; i < obj->jmpSize; i += sizeof(Elf64_Rela)) {
-            Elf64_Rela* rela = malloc(sizeof(Elf64_Rela));
-            vfsSeek(mapping->handle, (obj->jmpVirtual - obj->baseAddr) + mapping->fileOffset + i);
-            vfsRead(mapping->handle, rela, sizeof(Elf64_Rela));
-            rela->r_offset += obj->baseAddr;
-            if (rela->r_info == 0) break;
-            dyn_push(obj->relaEntries, rela);
-            dyn_push(proc->relas, rela);
-        }
-    }
+    // if (obj->relaVirtual) {
+    //     TaskMapping* mapping = findMappingInProcess(proc, obj->relaVirtual);
+    //     if (mapping == NULL) {
+    //         error("Failed to find process memory mapping for rela virtual 0x%lx\n",
+    //               obj->relaVirtual);
+    //     }
+    //     for (size_t i = 0; i < obj->relaSize; i += sizeof(Elf64_Rela)) {
+    //         Elf64_Rela* rela = malloc(sizeof(Elf64_Rela));
+    //         vfsSeek(mapping->handle, (obj->relaVirtual - obj->baseAddr) + mapping->fileOffset +
+    //         i); vfsRead(mapping->handle, rela, sizeof(Elf64_Rela)); rela->r_offset +=
+    //         obj->baseAddr; if (rela->r_info == 0) break; dyn_push(obj->relaEntries, rela);
+    //         dyn_push(proc->relas, rela);
+    //     }
+    // }
+    // if (obj->jmpVirtual) {
+    //     TaskMapping* mapping = findMappingInProcess(proc, obj->jmpVirtual);
+    //     if (mapping == NULL) {
+    //         error("Failed to find process memory mapping for jmp virtual 0x%lx\n",
+    //         obj->jmpVirtual);
+    //     }
+    //     for (size_t i = 0; i < obj->jmpSize; i += sizeof(Elf64_Rela)) {
+    //         Elf64_Rela* rela = malloc(sizeof(Elf64_Rela));
+    //         vfsSeek(mapping->handle, (obj->jmpVirtual - obj->baseAddr) + mapping->fileOffset +
+    //         i); vfsRead(mapping->handle, rela, sizeof(Elf64_Rela)); rela->r_offset +=
+    //         obj->baseAddr; if (rela->r_info == 0) break; dyn_push(obj->relaEntries, rela);
+    //         dyn_push(proc->relas, rela);
+    //     }
+    // }
 }
 
 static Process* findProcByPID(uint64_t pid) {
@@ -146,9 +144,7 @@ void attachThread(uint64_t pid, uint64_t entryPoint) {
         debug("Stack addr 0x%lx mapped\n", stackVirt + i);
     }
     Thread* thread = aligned_alloc(64, sizeof(Thread));
-    // Thread* thread = malloc(sizeof(Thread) + 64);
-    // thread      = (Thread*)ALIGNUP((uint64_t)thread, 64);
-    thread->tid = 0;
+    thread->tid    = 0;
     memset(thread->fpuState, 0, sizeof(thread->fpuState));
     thread->registers =
         (IsrRegisters*)((uint64_t)pmmAllocateSize(sizeof(IsrRegisters)) + (uint64_t)getHHDM());
@@ -199,9 +195,9 @@ void makeNewProcess(uint64_t pid, ElfFile* obj) {
     proc->state = PROCESSSTATE_READY;
     proc->pml4  = vmmGetPML4(pid);
     // proc->signals[SIGKILL] = defaultSignalHandler;
-    if (!obj->relaVirtual) {
-        debug("No RELA address was passed in\n");
-    }
+    // if (!obj->relaVirtual) {
+    //     debug("No RELA address was passed in\n");
+    // }
     debug("0x%lx 0x%lx\n", obj->startAddr, obj->baseAddr);
     proc->baseAddr = obj->baseAddr;
     proc->threads  = NULL;
@@ -307,6 +303,9 @@ found_thread:
             trampoline_va += PAGE_SIZE;
             trampoline_phys = getPhysicalAddr(vmmGetPML4(0), trampoline_va, false);
         }
+        if (thread->next != thread) {
+            error("Thread chain broken on init, thread->next doesn't point to itself\n");
+        }
     }
     GSbase* gsbase        = gsBases[getAPICID()];
     gsbase->currentProc   = launch;
@@ -395,147 +394,148 @@ void cleanProc(uint64_t pid, uint8_t exitCode) {
     todo(true, "Clean %lu with %hhu\n", pid, exitCode);
 }
 
-static dynarray(Elf64_Rela*) findRelasInPage(Process* proc, uint64_t virtualAddr) {
-    dynarray(Elf64_Rela*) newRelas = NULL;
-    for (size_t i = 0; i < dyn_size(proc->relas); ++i) {
-        Elf64_Rela* rela = proc->relas[i];
-        if (isInRange(virtualAddr, virtualAddr + PAGE_SIZE, rela->r_offset)) {
-            dyn_push(newRelas, rela);
-        }
-    }
-    return newRelas;
-}
+// static dynarray(Elf64_Rela*) findRelasInPage(Process* proc, uint64_t virtualAddr) {
+//     dynarray(Elf64_Rela*) newRelas = NULL;
+//     for (size_t i = 0; i < dyn_size(proc->relas); ++i) {
+//         Elf64_Rela* rela = proc->relas[i];
+//         if (isInRange(virtualAddr, virtualAddr + PAGE_SIZE, rela->r_offset)) {
+//             dyn_push(newRelas, rela);
+//         }
+//     }
+//     return newRelas;
+// }
 
-static uint32_t getSymbolCount(Process* proc, uint64_t symtabVirtual) {
-    TaskMapping* mapping = findMappingInProcess(proc, symtabVirtual);
-    if (!mapping) return 0;
-    uint64_t symtabSizeInMapping = mapping->memLength - (symtabVirtual - mapping->virtualStart);
-    return symtabSizeInMapping / sizeof(Elf64_Sym);
-}
+// static uint32_t getSymbolCount(Process* proc, uint64_t symtabVirtual) {
+//     TaskMapping* mapping = findMappingInProcess(proc, symtabVirtual);
+//     if (!mapping) return 0;
+//     uint64_t symtabSizeInMapping = mapping->memLength - (symtabVirtual - mapping->virtualStart);
+//     return symtabSizeInMapping / sizeof(Elf64_Sym);
+// }
 
-static bool dyn_contains(dynarray(Elf64_Rela*) arr, Elf64_Rela* rela) {
-    for (size_t i = 0; i < dyn_size(arr); ++i) {
-        if (memcmp(arr[i], rela, sizeof(Elf64_Rela)) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
+// static bool dyn_contains(dynarray(Elf64_Rela*) arr, Elf64_Rela* rela) {
+//     for (size_t i = 0; i < dyn_size(arr); ++i) {
+//         if (memcmp(arr[i], rela, sizeof(Elf64_Rela)) == 0) {
+//             return true;
+//         }
+//     }
+//     return false;
+// }
 
-static ElfFile* searchFileForRela(ElfFile* file, Elf64_Rela* rela) {
-    if (dyn_contains(file->relaEntries, rela)) {
-        return file;
-    }
-    for (size_t i = 0; i < dyn_size(file->deps); ++i) {
-        ElfFile* dep = file->deps[i];
-        if (searchFileForRela(dep, rela) != NULL) {
-            return dep;
-        }
-    }
-    return NULL;
-}
+// static ElfFile* searchFileForRela(ElfFile* file, Elf64_Rela* rela) {
+//     if (dyn_contains(file->relaEntries, rela)) {
+//         return file;
+//     }
+//     for (size_t i = 0; i < dyn_size(file->deps); ++i) {
+//         ElfFile* dep = file->deps[i];
+//         if (searchFileForRela(dep, rela) != NULL) {
+//             return dep;
+//         }
+//     }
+//     return NULL;
+// }
 
-static ElfFile* searchProcForRela(Process* proc, Elf64_Rela* rela) {
-    return searchFileForRela(proc->elfObj, rela);
-}
+// static ElfFile* searchProcForRela(Process* proc, Elf64_Rela* rela) {
+//     return searchFileForRela(proc->elfObj, rela);
+// }
 
-static Elf64_Sym* _readSym(Process* proc, ElfFile* file, uint32_t idx) {
-    TaskMapping* mapping = findMappingInProcess(proc, file->symtabVirtual);
-    if (!mapping) {
-        error("Failed to get symtabVirtual for file base %lx\n", file->baseAddr);
-    }
-    if (idx == 0 || idx >= getSymbolCount(proc, file->symtabVirtual)) {
-        return NULL;
-    }
-    Elf64_Sym* sym = malloc(sizeof(Elf64_Sym));
-    if (!sym) {
-        error("Failed to allocate memory for symbol\n");
-    }
-    uint64_t symOffsetInFile =
-        (file->symtabVirtual - file->baseAddr) + (uint64_t)idx * sizeof(Elf64_Sym);
-    uint64_t vfsPosition = mapping->fileOffset + symOffsetInFile;
-    vfsSeek(mapping->handle, vfsPosition);
-    vfsRead(mapping->handle, sym, sizeof(Elf64_Sym));
-    return sym;
-}
+// static Elf64_Sym* _readSym(Process* proc, ElfFile* file, uint32_t idx) {
+//     TaskMapping* mapping = findMappingInProcess(proc, file->symtabVirtual);
+//     if (!mapping) {
+//         error("Failed to get symtabVirtual for file base %lx\n", file->baseAddr);
+//     }
+//     if (idx == 0 || idx >= getSymbolCount(proc, file->symtabVirtual)) {
+//         return NULL;
+//     }
+//     Elf64_Sym* sym = malloc(sizeof(Elf64_Sym));
+//     if (!sym) {
+//         error("Failed to allocate memory for symbol\n");
+//     }
+//     uint64_t symOffsetInFile =
+//         (file->symtabVirtual - file->baseAddr) + (uint64_t)idx * sizeof(Elf64_Sym);
+//     uint64_t vfsPosition = mapping->fileOffset + symOffsetInFile;
+//     vfsSeek(mapping->handle, vfsPosition);
+//     vfsRead(mapping->handle, sym, sizeof(Elf64_Sym));
+//     return sym;
+// }
 
-static Elf64_Sym* loadSymByIndex(Process* proc, ElfFile* file, uint32_t idx, uint64_t* baseAddrOut,
-                                 const char* lookupName, bool recurse) {
-    Elf64_Sym* sym = _readSym(proc, file, idx);
-    if (!sym) {
-        return NULL;
-    }
-    *baseAddrOut = file->baseAddr;
-    if (sym->st_shndx == SHN_UNDEF && !recurse) {
-        bool        found = false;
-        const char* name  = (const char*)file->strtab + sym->st_name;
-        if (lookupName == NULL) {
-            lookupName = name;
-        }
-        for (size_t i = 0; i < dyn_size(file->deps) && !found; ++i) {
-            ElfFile* dep = file->deps[i];
-            for (size_t j = 1; j < getSymbolCount(proc, dep->symtabVirtual) && !found; ++j) {
-                uint64_t   depBaseAddr = 0;
-                Elf64_Sym* depSym = loadSymByIndex(proc, dep, j, &depBaseAddr, lookupName, true);
-                if (!depSym) {
-                    continue;
-                }
-                if (depSym->st_shndx != SHN_UNDEF) {
-                    const char* symName = (const char*)dep->strtab + depSym->st_name;
-                    if (strlen(symName) > 0 && strlen(lookupName) > 0 &&
-                        strcmp(lookupName, symName) == 0) {
-                        free(sym);
-                        sym          = depSym;
-                        *baseAddrOut = depBaseAddr;
-                        found        = true;
-                        debug("Found symbol %s in dependency file %lx\n", symName, dep->baseAddr);
-                        break;
-                    }
-                }
-                free(depSym);
-            }
-        }
-    }
-    return sym;
-}
+// static Elf64_Sym* loadSymByIndex(Process* proc, ElfFile* file, uint32_t idx, uint64_t*
+// baseAddrOut,
+//                                  const char* lookupName, bool recurse) {
+//     Elf64_Sym* sym = _readSym(proc, file, idx);
+//     if (!sym) {
+//         return NULL;
+//     }
+//     *baseAddrOut = file->baseAddr;
+//     if (sym->st_shndx == SHN_UNDEF && !recurse) {
+//         bool        found = false;
+//         const char* name  = (const char*)file->strtab + sym->st_name;
+//         if (lookupName == NULL) {
+//             lookupName = name;
+//         }
+//         for (size_t i = 0; i < dyn_size(file->deps) && !found; ++i) {
+//             ElfFile* dep = file->deps[i];
+//             for (size_t j = 1; j < getSymbolCount(proc, dep->symtabVirtual) && !found; ++j) {
+//                 uint64_t   depBaseAddr = 0;
+//                 Elf64_Sym* depSym = loadSymByIndex(proc, dep, j, &depBaseAddr, lookupName, true);
+//                 if (!depSym) {
+//                     continue;
+//                 }
+//                 if (depSym->st_shndx != SHN_UNDEF) {
+//                     const char* symName = (const char*)dep->strtab + depSym->st_name;
+//                     if (strlen(symName) > 0 && strlen(lookupName) > 0 &&
+//                         strcmp(lookupName, symName) == 0) {
+//                         free(sym);
+//                         sym          = depSym;
+//                         *baseAddrOut = depBaseAddr;
+//                         found        = true;
+//                         debug("Found symbol %s in dependency file %lx\n", symName,
+//                         dep->baseAddr); break;
+//                     }
+//                 }
+//                 free(depSym);
+//             }
+//         }
+//     }
+//     return sym;
+// }
 
-static uint64_t resolveAddr(Process* proc, Elf64_Rela* rela) {
-    uint64_t baseAddr = 0;
-    ElfFile* relaFile = searchProcForRela(proc, rela);
-    if (!relaFile) {
-        error("Failed to find rela file\n");
-    }
-    Elf64_Sym* sym =
-        loadSymByIndex(proc, relaFile, ELF64_R_SYM(rela->r_info), &baseAddr, NULL, false);
-    if (!sym) {
-        error("Failed to find symbol index %lu\n", ELF64_R_SYM(rela->r_info));
-    }
-    uint64_t val = sym->st_value + baseAddr;
-    free(sym);
-    return val;
-}
+// static uint64_t resolveAddr(Process* proc, Elf64_Rela* rela) {
+//     uint64_t baseAddr = 0;
+//     ElfFile* relaFile = searchProcForRela(proc, rela);
+//     if (!relaFile) {
+//         error("Failed to find rela file\n");
+//     }
+//     Elf64_Sym* sym =
+//         loadSymByIndex(proc, relaFile, ELF64_R_SYM(rela->r_info), &baseAddr, NULL, false);
+//     if (!sym) {
+//         error("Failed to find symbol index %lu\n", ELF64_R_SYM(rela->r_info));
+//     }
+//     uint64_t val = sym->st_value + baseAddr;
+//     free(sym);
+//     return val;
+// }
 
-static void applyRela(Process* proc, Elf64_Rela* rela, uint64_t bufferAddr) {
-    // debug("Applying at 0x%lx symidx %u type %u addend 0x%lx\n", rela->r_offset,
-    //       ELF64_R_SYM(rela->r_info), ELF64_R_TYPE(rela->r_info), rela->r_addend);
-    debug("0x%lx 0x%lx\n", proc->baseAddr, rela->r_addend);
-    switch (ELF64_R_TYPE(rela->r_info)) {
-    case R_X86_64_RELATIVE: {
-        *(uint64_t*)(bufferAddr + (rela->r_offset & 0xFFF)) = proc->baseAddr + rela->r_addend;
-    } break;
-    case R_X86_64_GLOB_DAT:
-    case R_X86_64_JUMP_SLOT: {
-        uint64_t resolvedAddr                               = resolveAddr(proc, rela);
-        *(uint64_t*)(bufferAddr + (rela->r_offset & 0xFFF)) = resolvedAddr;
-    } break;
-    default: {
-        todo(true, "Handle rela 0x%llx type: %llu sym: %llu addend: 0x%llx\n", rela->r_offset,
-             ELF64_R_TYPE(rela->r_info), ELF64_R_SYM(rela->r_info), rela->r_addend);
-    } break;
-    }
-    debug("Rela at 0x%lx patched to 0x%lx\n", rela->r_offset,
-          *(uint64_t*)(bufferAddr + (rela->r_offset & 0xFFF)));
-}
+// static void applyRela(Process* proc, Elf64_Rela* rela, uint64_t bufferAddr) {
+//     // debug("Applying at 0x%lx symidx %u type %u addend 0x%lx\n", rela->r_offset,
+//     //       ELF64_R_SYM(rela->r_info), ELF64_R_TYPE(rela->r_info), rela->r_addend);
+//     debug("0x%lx 0x%lx\n", proc->baseAddr, rela->r_addend);
+//     switch (ELF64_R_TYPE(rela->r_info)) {
+//     case R_X86_64_RELATIVE: {
+//         *(uint64_t*)(bufferAddr + (rela->r_offset & 0xFFF)) = proc->baseAddr + rela->r_addend;
+//     } break;
+//     case R_X86_64_GLOB_DAT:
+//     case R_X86_64_JUMP_SLOT: {
+//         uint64_t resolvedAddr                               = resolveAddr(proc, rela);
+//         *(uint64_t*)(bufferAddr + (rela->r_offset & 0xFFF)) = resolvedAddr;
+//     } break;
+//     default: {
+//         todo(true, "Handle rela 0x%llx type: %llu sym: %llu addend: 0x%llx\n", rela->r_offset,
+//              ELF64_R_TYPE(rela->r_info), ELF64_R_SYM(rela->r_info), rela->r_addend);
+//     } break;
+//     }
+//     debug("Rela at 0x%lx patched to 0x%lx\n", rela->r_offset,
+//           *(uint64_t*)(bufferAddr + (rela->r_offset & 0xFFF)));
+// }
 
 void mapProcessAddr(Process* proc, uint64_t virtualAddress, bool shouldReturn) {
     LOCK(proc->lock);
@@ -597,17 +597,17 @@ void mapProcessAddr(Process* proc, uint64_t virtualAddress, bool shouldReturn) {
         sendSignal(proc, SIGABORT);
         goto out;
     }
-    dynarray(Elf64_Rela*) relas = findRelasInPage(proc, base);
-    vmmMapPage(vmmGetPML4(0), phys, getScratchPageVA(),
-               totalPermissions | MAP_PROTECTION_KERNEL | MAP_PROTECTION_RW | MAP_PROTECTION_NOEXEC,
-               MAP_PRESENT);
-    for (size_t j = 0; j < dyn_size(relas); ++j) {
-        applyRela(proc, relas[j], (uint64_t)kpage);
-    }
-    vmmUnmapPage(vmmGetPML4(0), getScratchPageVA());
-    dyn_free(relas);
-    info("[%u]: Mapping PADDR 0x%lx to VADDR 0x%lx\n", getAPICID(), phys, base);
+    // dynarray(Elf64_Rela*) relas = findRelasInPage(proc, base);
+    // vmmMapPage(vmmGetPML4(0), phys, getScratchPageVA(),
+    //            totalPermissions | MAP_PROTECTION_KERNEL | MAP_PROTECTION_RW |
+    //            MAP_PROTECTION_NOEXEC, MAP_PRESENT);
+    // for (size_t j = 0; j < dyn_size(relas); ++j) {
+    //     applyRela(proc, relas[j], (uint64_t)kpage);
+    // }
+    // vmmUnmapPage(vmmGetPML4(0), getScratchPageVA());
+    // dyn_free(relas);
     vmmMapPage(proc->pml4, phys, base, totalPermissions, MAP_PRESENT);
+    info("[%u]: Mapping PADDR 0x%lx to VADDR 0x%lx\n", getAPICID(), phys, base);
 out:
     proc->state = PROCESSSTATE_RUNNING;
     if (!shouldReturn) {

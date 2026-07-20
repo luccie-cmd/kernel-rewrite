@@ -22,12 +22,18 @@ syscallEntry:
     mov eax, 0x10
     mov ds, ax
     mov es, ax
-    mov fs, ax
-    mov gs, ax
     mov ss, ax
+    mov gs, ax
     swapgs
 
     push r15
+    mov rax, gs:0x0
+    rdfsbase r15
+    mov [rax + 1040], r15
+    swapgs
+    mov eax, 0x10
+    mov fs, ax
+    swapgs
     push r14
     push r13
     push r12
@@ -70,11 +76,7 @@ switchProc:
     mov fs, ax
     mov gs, ax
 
-    mov rdx, r15
-    mov ecx, 0xC0000100
-    mov eax, edx
-    shr rdx, 32
-    wrmsr
+    wrfsbase r15
 
     mov rbx, [rdi + 152]
     mov rcx, [rdi + 128]

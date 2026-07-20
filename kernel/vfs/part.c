@@ -1,3 +1,4 @@
+#include <common/dbg/dbg.h>
 #include <drivers/drivers.h>
 #include <kernel/vfs/vfs.h>
 
@@ -40,9 +41,6 @@ static uint8_t* parseGUID(uint8_t* GUID) {
     return newGUID;
 }
 
-PUSH_DIAG(GCC diagnostic push);
-PUSH_DIAG(GCC diagnostic ignored "-Wanalyzer-malloc-leak");
-
 static void readPartitionTable(MSCDriver* drv) {
     PartitionTableHeader* PTH = malloc(sizeof(PartitionTableHeader));
     drv->read(drv, PTH, 1, 1);
@@ -83,8 +81,6 @@ static void readPartitionTable(MSCDriver* drv) {
     free(partBuffer);
     free(PTH);
 }
-
-PUSH_DIAG(GCC diagnostic pop);
 
 size_t vfsGetPartCount() {
     size_t result = 0;

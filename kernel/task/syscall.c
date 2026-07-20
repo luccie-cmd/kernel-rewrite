@@ -81,7 +81,7 @@ static bool validateUserRange(Process* proc, uint64_t base, uint64_t len) {
     uint64_t curr = base;
     while (curr < end) {
         TaskMapping* mapping = findMappingInProcess(proc, curr);
-        if (!mapping || mapping->handle != (uint64_t)-1) return false;
+        if (!mapping) return false;
         uint64_t mappingEnd = mapping->virtualStart + mapping->memLength;
         if (end <= mappingEnd) {
             return true;

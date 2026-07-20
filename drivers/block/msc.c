@@ -1,3 +1,4 @@
+#include <common/dbg/dbg.h>
 #include <drivers/block/nvme.h>
 #include <drivers/msc.h>
 

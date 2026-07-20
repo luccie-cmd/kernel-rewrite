@@ -1,3 +1,4 @@
+#include <common/dbg/dbg.h>
 #include <kernel/task/syscall.h>
 
 static inline bool isInRange(uint64_t start, uint64_t end, uint64_t address) {

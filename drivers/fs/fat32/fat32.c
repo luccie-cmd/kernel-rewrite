@@ -6,12 +6,9 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef __OPTIMIZE__
-#undef toupper
-static inline int toupper(int c) {
+static inline int fatToupper(int c) {
     return (c >= 'a' && c <= 'z') ? (c - 32) : c;
 }
-#endif
 #define SECTOR_SIZE 512
 
 static uint32_t readFat(FAT32DriverData* drvData, size_t lbaIdx, uint32_t offset);
@@ -66,11 +63,11 @@ static void getShortName(char* name, char shortName[12]) {
     if (ext == NULL) ext = name + 11;
 
     for (int i = 0; i < 8 && name[i] && (name + i) < ext; i++)
-        shortName[i] = toupper((unsigned char)name[i]);
+        shortName[i] = fatToupper((unsigned char)name[i]);
 
     if (ext != name + 11 && *ext == '.') {
         for (int i = 0; i < 3 && ext[i + 1]; i++)
-            shortName[i + 8] = toupper((unsigned char)ext[i + 1]);
+            shortName[i + 8] = fatToupper((unsigned char)ext[i + 1]);
     }
 }
 
@@ -318,7 +315,8 @@ static void FAT32close(FSDriver* this, uint64_t fd) {
 
 static uint64_t FAT32open(FSDriver* this, const char* path) {
     LOCK(this->lock);
-    FAT32DriverData* drvData = (FAT32DriverData*)this->drvData;
+    const char*      pathCopy = path;
+    FAT32DriverData* drvData  = (FAT32DriverData*)this->drvData;
     if (*path == '/') {
         path += 1;
     }
@@ -353,6 +351,7 @@ static uint64_t FAT32open(FSDriver* this, const char* path) {
                 return (uint64_t)-1;
             }
             UNLOCK(this->lock);
+            debug("Found `%s`\n", name);
             this->close(this, current->handle);
             LOCK(this->lock);
             current = openEntry(drvData, &entry);
@@ -365,6 +364,8 @@ static uint64_t FAT32open(FSDriver* this, const char* path) {
     }
     current->name = strdup(name);
     UNLOCK(this->lock);
+    debug("`%s` resolved to handle %lu (File size: %lu)\n", pathCopy, current->handle,
+          this->getLength(this, current->handle));
     return current->handle;
 }
 

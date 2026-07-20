@@ -1,3 +1,4 @@
+#include <common/dbg/dbg.h>
 #include <kernel/task/syscall.h>
 #include <kernel/vfs/vfs.h>
 
@@ -25,6 +26,7 @@ size_t readHandler(ProcFile* f, void* buf, size_t count) {
         return 0;
     }
     if (f->type != FILETYPE_REGULAR) {
+        todo(false, "Read from non regular text files\n");
         return 0;
     }
     vfsRead(f->vfsHandle, buf, count);

@@ -44,6 +44,8 @@ typedef struct __attribute__((aligned(64))) Thread {
     bool            isKernel;
 } Thread;
 
+static_assert(offsetof(Thread, fsBase) == 1040, "thread->fsbase offset is not 1040");
+
 typedef enum ProcessState {
     PROCESSSTATE_READY,
     PROCESSSTATE_ZOMBIE,

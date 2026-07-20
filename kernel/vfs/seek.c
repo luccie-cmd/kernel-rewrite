@@ -1,3 +1,4 @@
+#include <common/dbg/dbg.h>
 #include <kernel/vfs/vfs.h>
 
 void vfsSeek(uint64_t fileIndex, size_t seekOffset) {

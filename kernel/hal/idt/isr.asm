@@ -25,7 +25,9 @@ str0: db "Test123 %lx", 0x0a, 0
         mov rbx, gs:0x0
         mov eax, 0b111
         xsave [rbx]
-        pop rbx
+        mov rax, gs:0x0
+        rdfsbase rbx
+        mov [rax + 1040], rbx
         call isrCommon
         test byte [rsp + 48], 3
         jz %%skip_restore_swapgs
@@ -63,6 +65,9 @@ str0: db "Test123 %lx", 0x0a, 0
         mov rbx, gs:0x0
         mov eax, 0b111
         xsave [rbx]
+        mov rax, gs:0x0
+        rdfsbase rbx
+        mov [rax + 1040], rbx
         call isrCommon
         test byte [rsp + 48], 3
         jz %%skip_restore_swapgs

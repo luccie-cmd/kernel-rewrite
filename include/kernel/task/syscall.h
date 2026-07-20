@@ -11,15 +11,17 @@
 #define SYS_OPEN 5
 #define SYS_CLOSE 6
 #define SYS_GETMEM 7
-#define SYS_FREEMEM 8
-#define SYS_MOUNT 9
-#define SYS_UMOUNT 10
-#define SYS_GETPARTITION 11
-#define SYS_SENDSIGN 12
-#define SYS_PIVOT 13
-#define SYS_CREATEDIR 14
-#define SYS_EXEC 15
-#define SYS_MAX 16
+#define SYS_GETMEMFD 8
+#define SYS_GETMEMSH 9
+#define SYS_FREEMEM 10
+#define SYS_MOUNT 11
+#define SYS_UMOUNT 12
+#define SYS_GETPARTITION 13
+#define SYS_SENDSIGN 14
+#define SYS_PIVOT 15
+#define SYS_CREATEDIR 16
+#define SYS_EXEC 17
+#define SYS_MAX 18
 
 #define SIGABORT 0
 #define SIGKILL 1
@@ -34,6 +36,14 @@
 #define O_CREAT (1 << 5)
 
 #define MOUNT_DISKPART (1 << 0)
+
+#define PROT_READ (1 << 0)
+#define PROT_WRITE (1 << 1)
+#define PROT_EXEC (1 << 2)
+#define PROT_NONE 0
+#define MAP_FIXED (1 << 0)
+#define MAP_PRIVATE (1 << 1)
+#define MAP_ANONYMOUS (1 << 2)
 
 typedef struct __attribute__((packed)) getinfo_structure {
     size_t   size;

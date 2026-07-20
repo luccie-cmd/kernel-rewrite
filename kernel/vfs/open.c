@@ -1,3 +1,4 @@
+#include <common/dbg/dbg.h>
 #include <kernel/vfs/vfs.h>
 
 dynarray(VFSFile*) vfsFiles;

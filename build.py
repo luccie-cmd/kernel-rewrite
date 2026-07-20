@@ -57,7 +57,7 @@ if os.path.exists("./script/config.py.old"):
     OLD_CONFIG = readConfig("./script/config.py.old")
 ALLOWED_CONFIG = [
     ["config", ["release", "debug"], True],
-    ["arch", ["x64"], True],
+    ["arch", ["amd64"], True],
     ["compiler", ["gcc", "clang", "custom"], True],
     ["rootFS", ["fat32", 'ext2', 'ext3', "ext4"], True],
     ["bootloader", ["limine-uefi", "custom"], True],
@@ -104,7 +104,7 @@ else:
     CONFIG["CFLAGS"] += ["-DDEBUG"]
     # CONFIG["CFLAGS"] += ["-DNDEBUG"]
 
-if "x64" in CONFIG.get("arch"):
+if "amd64" in CONFIG.get("arch"):
     CONFIG["CFLAGS"] += ["-m64"]
 
 if "yes" in CONFIG.get("usan"):
@@ -113,8 +113,6 @@ if "yes" in CONFIG.get("usan"):
         CONFIG["LDFLAGS"] += ['-fsanitize=undefined']
 
 if "gcc" in CONFIG.get("compiler"):
-    if "yes" in CONFIG.get("analyzer"):
-        CONFIG["CFLAGS"] += ["-fanalyzer", "-Wno-analyzer-malloc-leak"]
     CONFIG["CFLAGS"] += ['-fprefetch-loop-arrays', '-fmax-errors=1']
     CONFIG["CFLAGS"] += ['-Wno-aggressive-loop-optimizations']
 if "clang" in CONFIG.get("compiler"):
@@ -152,7 +150,6 @@ def getExtension(file):
 
 def buildC(file):
     compiler = CONFIG.get("compiler")[0]
-    
     if compiler == "custom":
         compiler = "../cCompiler/bin/cCompiler.elf"
     # if CONFIG.get("compiler")[0] == "gcc":
@@ -164,8 +161,27 @@ def buildC(file):
         command += " " + option
     print(f"C     {file}")
     command += f" -o {CONFIG['outDir'][0]}/{file}.o"
-    return callCmd(command, True)[0]
-    
+    if callCmd(command, True)[0] != 0:
+        return 1
+    if "yes" in CONFIG.get("analyzer"):
+        compiler = "clang"
+        options = CONFIG["CFLAGS"].copy()
+        options.append("-std=c23")
+        if "gcc" in CONFIG.get("compiler"):
+            options.remove('-fprefetch-loop-arrays')
+            options.remove('-fmax-errors=1')
+            options.remove('-Wno-aggressive-loop-optimizations')
+        else:
+            options += ['-Wno-ignored-attributes']
+        command = compiler + " " + file
+        for option in options:
+            command += " " + option
+        print(f"ANAYZ {file}")
+        command += f" -o {CONFIG['outDir'][0]}/{file}.o"
+        if callCmd(command, True)[0] != 0:
+            return 1
+    return 0
+
 def buildCXX(file):
     compiler = CONFIG.get("compiler")[0]
     if compiler == "gcc":
@@ -221,14 +237,16 @@ def buildSO(dir: str, out_file: str):
     obj_files_str = " ".join(obj_files)
     cmd = f"gcc -shared -o {out_file} {obj_files_str} -nostdlib -fPIC -Wl,--hash-style=sysv"
     print(f"SO    {out_file}")
-    callCmd(cmd)
+    if (callCmd(cmd)[0]):
+        print(f"SO    {out_file} FAILED")
+        exit(1)
     outName = os.path.basename(out_file)
-    callCmd(f"objdump -C -D -x -Mintel -g -r -t -L {CONFIG['outDir'][0]}/{outName} > {CONFIG['outDir'][0]}/{outName}.asm")
+    callCmd(f"objdump -C -D -x -Mintel -g -r -t -L {out_file} > {out_file}.asm")
 
 def buildKernel(kernel_dir: str):
     files = glob.glob(kernel_dir+'/**', recursive=True)
     files = sorted(files, key=str.lower)
-    CONFIG["INCPATHS"] += [f"-I{kernel_dir}"]
+    CONFIG["INCPATHS"] += [f"-I{kernel_dir}", f"-I{kernel_dir}/../include"]
     for file in files:
         if not os.path.isfile(file):
             continue
@@ -276,13 +294,15 @@ def buildKernel(kernel_dir: str):
         if code != 0:
             callCmd(f"rm -f ./.build-cache/{basename}/cache/{file}")
             exit(code)
+    CONFIG["INCPATHS"].remove(f"-I{kernel_dir}")
+    CONFIG["INCPATHS"].remove(f"-I{kernel_dir}/../include")
 
 def linkDir(kernel_dir, linker_file, outName, static_lib_files=[]):
     files = glob.glob(kernel_dir+'/**', recursive=True)
     if "gcc" in CONFIG["compiler"]:
-        command = "g++"
+        command = "gcc"
     else:
-        command = "clang++ -fuse-ld=lld"
+        command = "clang -fuse-ld=lld"
     options = CONFIG["LDFLAGS"]
     for option in options:
         command += " " + option
@@ -348,7 +368,7 @@ def makeFileSystem(loop_device):
     # ONLY ADD THIS LINE BACK IN WHEN WE'VE GOT A WORKING FS DRIVER
     # callCmd(f"./mkfs.fs {loop_device}p2")
 
-def mountFs(device, boot, kernel, initramFS, files):
+def mountFs(device, boot, kernel, initramFS, files: tuple[str, str]):
     callCmd(f"mkdir -p mnt")
     print("> Copying boot files")
     callCmd(f"mount {device}p1 mnt")
@@ -370,18 +390,23 @@ def mountFs(device, boot, kernel, initramFS, files):
     callCmd(f"mount {device}p2 mnt")
     callCmd(f"mkdir -p mnt/lib")
     callCmd(f"mkdir -p mnt/bin")
-    callCmd(f"cp {CONFIG['outDir'][0]}/libc_init.so mnt/lib/libc_init.so")
-    callCmd(f"cp {CONFIG['outDir'][0]}/shell.elf mnt/bin/init")
+    # callCmd(f"cp {CONFIG['outDir'][0]}/libc.so mnt/lib/libc.so")
+    # callCmd(f"cp {CONFIG['outDir'][0]}/shell.elf mnt/bin/init")
     for file in files:
-        if os.path.isfile(file):
-            callCmd(f"cp {file} mnt")
+        if os.path.isfile(file[0]):
+            if callCmd(f"cp {file[0]} mnt/{file[1]}")[0] != 0:
+                print("Copy file failed")
+                exit(1)
         else:
-            callCmd(f"mkdir mnt/{file}")
+            if callCmd(f"mkdir -p mnt/{file[1]}")[0] != 0:
+                print("Creating dir failed")
+                exit(1)
     callCmd(f"umount -l mnt")
     callCmd(f"losetup -d {device}")
     callCmd(f"rm -rf mnt")
 
 def buildInitImg():
+    print("> Building init image")
     out_file = f"{CONFIG['outDir'][0]}/init.img"
     command = f"dd if=/dev/zero of={out_file} bs=1M count={10}"
     callCmd(command)
@@ -400,14 +425,13 @@ def buildInitImg():
     print("> Copying boot files")
     callCmd(f"mount {LOOP_DEVICE}p1 mnt2")
     callCmd(f"mkdir -p mnt2/lib")
-    callCmd(f"cp ./bin/init.elf mnt2/init")
-    callCmd(f"cp ./bin/libc_init.so mnt2/lib/libc_init.so")
+    callCmd(f"cp ./bin/userspace/init.elf mnt2/init")
     callCmd(f"cp ./mountFile ./mnt2/mount")
     callCmd(f"umount -l mnt2")
     callCmd(f"losetup -d {LOOP_DEVICE}")
     callCmd(f"rm -rf mnt2")
 
-def buildImage(out_file, boot_file, kernel_file, initRam, files: list[tuple]):
+def buildImage(out_file, boot_file, kernel_file, initRam, files: list[tuple[str, str]]):
     if force_rebuild or not os.path.exists(out_file):
         if not out_file.startswith("/dev"):
             callCmd(f"rm -f {out_file}")
@@ -564,9 +588,8 @@ def main():
         buildDir("common", True, f"{CONFIG['outDir'][0]}/common.a")
         print("> Building kernel")
         buildDir("kernel", False)
-        print("> Building init")
         CONFIG["CFLAGS"] += ['-nostdinc']
-        CONFIG["INCPATHS"] = ['-Iinit/include', '-Iinit/include/libc']
+        CONFIG["INCPATHS"] = ['-Iuserspace/include', '-Iuserspace/include/libc']
         CONFIG["CFLAGS"].remove('-fno-pie')
         CONFIG["CFLAGS"].remove('-fno-PIE')
         CONFIG["CFLAGS"].remove('-fno-pic')
@@ -576,19 +599,31 @@ def main():
         CONFIG["CFLAGS"].append('-fpic')
         CONFIG["CFLAGS"].append('-fPIC')
         CONFIG["CFLAGS"].remove('-mcmodel=kernel')
-        CONFIG["CFLAGS"].remove('-mno-tls-direct-seg-refs')
         CONFIG["CFLAGS"].remove('-mno-red-zone')
+        CONFIG["CFLAGS"].remove('-mno-tls-direct-seg-refs')
+        CONFIG["CFLAGS"].remove('-fno-strict-aliasing')
         CONFIG["CFLAGS"].remove('-fno-stack-protector')
         CONFIG["CXXFLAGS"].remove('-fno-exceptions')
         CONFIG["CXXFLAGS"].remove('-fno-rtti') 
-        buildDir("init/src", False)
+        print("> Building init stub")
+        buildDir("userspace/initStub/src", False)
         print("> Building shell")
-        buildDir("init/shell", False)
-        print("> Building init's libc")
-        buildDir("init/libc", True, f"{CONFIG['outDir'][0]}/libc_init.a")
-        buildSO(f"{CONFIG['outDir'][0]}/init/libc", f"{CONFIG['outDir'][0]}/libc_init.so")
-        print("> Building start.asm")
-        callCmd(f"as -o {CONFIG['outDir'][0]}/init/libc/init/start.S.o ./init/libc/init/start.S")
+        buildDir("userspace/shell/src", False)
+        print("> Building dynamic linker")
+        if "yes" in CONFIG.get("usan"):
+            CONFIG["CFLAGS"].remove('-fsanitize=undefined')
+        buildDir("userspace/ldso/src", False)
+        if "yes" in CONFIG.get("usan"):
+            CONFIG["CFLAGS"].append('-fsanitize=undefined')
+        print("> Building userspace tls.asm")
+        callCmd(f"mkdir -p {CONFIG['outDir'][0]}/userspace/libc/init")
+        callCmd(f"as -o {CONFIG['outDir'][0]}/userspace/libc/init/tls.S.o ./userspace/libc/arch/{CONFIG['arch'][0]}/tls.S")
+        print("> Building userspace libc")
+        callCmd(f"rm -f {CONFIG['outDir'][0]}/userspace/libc/init/start.S.o")
+        buildDir("userspace/libc", True, f"{CONFIG['outDir'][0]}/userspace/libc.a")
+        buildSO(f"{CONFIG['outDir'][0]}/userspace/libc", f"{CONFIG['outDir'][0]}/userspace/libc.so")
+        print("> Building userspace start.asm")
+        callCmd(f"as -o {CONFIG['outDir'][0]}/userspace/libc/init/start.S.o ./userspace/libc/arch/{CONFIG['arch'][0]}/start.S")
         print("> Removing unused objects")
         cleanFiles(["libc", "drivers", "common", "kernel", "test"])
         print("> Linking kernel")
@@ -596,24 +631,44 @@ def main():
         CONFIG["LDFLAGS"].append('-Wl,--oformat=binary')
         linkDir(f"{CONFIG['outDir'][0]}/kernel", "util/linker.ld", "kernel.binary", [f"{CONFIG['outDir'][0]}/libc.a", f"{CONFIG['outDir'][0]}/drivers.a", f"{CONFIG['outDir'][0]}/common.a"])
         CONFIG["LDFLAGS"].remove('-Wl,--oformat=binary')
-        print("> Linking init")
+        print("> Linking dynamic linker")
         CONFIG["LDFLAGS"].remove('-fno-pie')
         CONFIG["LDFLAGS"].remove('-fno-PIE')
         CONFIG["LDFLAGS"].remove('-fno-pic')
         CONFIG["LDFLAGS"].remove('-fno-PIC')
         CONFIG["LDFLAGS"].remove('-mcmodel=kernel')
         CONFIG["LDFLAGS"].remove('-Wl,-no-pie')
+        CONFIG["LDFLAGS"].append('-shared')
+        CONFIG["LDFLAGS"].append('-Wl,-Bsymbolic')
+        CONFIG["LDFLAGS"].append('-fno-stack-protector')
+        CONFIG["LDFLAGS"].append('-fno-builtin')
+        if "yes" in CONFIG.get("usan"):
+            CONFIG["LDFLAGS"].remove('-fsanitize=undefined')
+        linkDir(f"{CONFIG['outDir'][0]}/userspace/ldso/src", None, "userspace/ld.so")
+        print("> Linking init")
+        if "yes" in CONFIG.get("usan"):
+            CONFIG["LDFLAGS"].append('-fsanitize=undefined')
+        CONFIG["LDFLAGS"].remove('-shared')
+        CONFIG["LDFLAGS"].remove('-Wl,-Bsymbolic')
+        CONFIG["LDFLAGS"].remove('-fno-stack-protector')
+        CONFIG["LDFLAGS"].remove('-fno-builtin')
         CONFIG["LDFLAGS"].append(f'-static')
-        CONFIG["LDFLAGS"].append(f"{CONFIG["outDir"][0]}/init/libc/init/start.S.o")
-        linkDir(f"{CONFIG['outDir'][0]}/init/src", None, "init", [f"{CONFIG['outDir'][0]}/libc_init.a"])
+        CONFIG["LDFLAGS"].append(f"{CONFIG["outDir"][0]}/userspace/libc/init/start.S.o")
+        linkDir(f"{CONFIG['outDir'][0]}/userspace/initStub/src", None, "userspace/init", [f"{CONFIG['outDir'][0]}/userspace/libc.a"])
         print("> Linking shell")
         CONFIG["LDFLAGS"].remove(f'-static')
-        CONFIG["LDFLAGS"].append('-Lbin')
-        CONFIG["LDFLAGS"].append('-l:libc_init.so')
-        linkDir(f"{CONFIG['outDir'][0]}/init/shell", None, "shell")
+        CONFIG["LDFLAGS"].remove(f'-Wl,--no-dynamic-linker')
+        CONFIG["LDFLAGS"].append(f'-Wl,--dynamic-linker,/lib/ld.so')
+        CONFIG["LDFLAGS"].append('-Lbin/userspace')
+        CONFIG["LDFLAGS"].append('-l:libc.so')
+        linkDir(f"{CONFIG['outDir'][0]}/userspace/shell/src", None, "userspace/shell")
         print("> Getting info")
         getInfo()
-        buildImage(f"{CONFIG['outDir'][0]}/image.img", f"{CONFIG['outDir'][0]}/BOOT*", f"{CONFIG['outDir'][0]}/kernel.elf", f"{CONFIG['outDir'][0]}/init.img", [])
+        buildImage(f"{CONFIG['outDir'][0]}/image.img", f"{CONFIG['outDir'][0]}/BOOT*", f"{CONFIG['outDir'][0]}/kernel.elf", f"{CONFIG['outDir'][0]}/init.img",
+                   [(f"{CONFIG['outDir'][0]}/userspace/shell.elf", "bin/shell.elf"),
+                    (f"{CONFIG['outDir'][0]}/userspace/shell.elf", "bin/init"),
+                    (f"{CONFIG['outDir'][0]}/userspace/ld.so.elf", "lib/ld.so"),
+                    (f"{CONFIG['outDir'][0]}/userspace/libc.so", "lib/libc.so")])
         # if os.path.exists("/dev/sda"):
         #     buildImage(f"/dev/sda", f"{CONFIG['outDir'][0]}/BOOT*", f"{CONFIG['outDir'][0]}/kernel.elf", [f"{CONFIG['outDir'][0]}/init.img"])
     if "run" in sys.argv:

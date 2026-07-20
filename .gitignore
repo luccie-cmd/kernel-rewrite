@@ -1,5 +1,6 @@
 .codex
 asan.asm
+asanpreinit.asm
 *.txt
 *.log
 *.ll

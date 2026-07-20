@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include <common/dbg/dbg.h>
 #include <common/minmax.h>
 #include <drivers/fs/sfs.h>
 #include <string.h>

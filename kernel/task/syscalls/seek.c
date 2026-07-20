@@ -1,11 +1,16 @@
+#include <common/dbg/dbg.h>
 #include <kernel/task/syscall.h>
 #include <kernel/vfs/vfs.h>
 
 uint64_t syscallSeek(SyscallRegs* regs) {
     Process* proc = getCurrentProc();
     LOCK(proc->lock);
-    proc->state      = PROCESSSTATE_BLOCKED;
-    uint64_t  fd     = regs->arg0;
+    proc->state = PROCESSSTATE_BLOCKED;
+    uint64_t fd = regs->arg0;
+    if (!proc->FDs[fd]) {
+        debug("FD %lu is not valid\n", fd);
+        return (uint64_t)-1;
+    }
     int64_t   offset = *(int64_t*)(&regs->arg1);
     uint64_t  whence = regs->arg2;
     ProcFile* file   = proc->FDs[fd];

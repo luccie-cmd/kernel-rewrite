@@ -1,3 +1,4 @@
+#include <common/dbg/dbg.h>
 #include <common/spinlock.h>
 #include <kernel/acpi/acpi.h>
 #include <kernel/acpi/tables.h>
